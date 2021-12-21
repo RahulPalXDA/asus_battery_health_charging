@@ -18,6 +18,7 @@ function LOAD_VARS(){
 	MAXIMUM_LIFESPAN="\t[3] Maximum Lifespan Mode."
 	MAXIMUM_LIFESPAN_INFO="\tStops charging when power is above 60% Charges again when Power is\n\tbelow it. This mode is suitable for when your notebook is always\n\towerd by it's AC adapter.\n"
 	LIMIT=$(cat /sys/class/power_supply/BAT?/charge_control_end_threshold)
+	SYSTEMD_DIR=/etc/systemd
 }
 function HEADER() {
         echo -e ""
@@ -49,21 +50,46 @@ function MAIN() {
 	fi
 }
 function SET_THRESHOLD() {
-	echo $MODE | sudo tee /sys/class/power_supply/BAT?/charge_control_end_threshold >> /dev/null
+	if [[ -f "/etc/systemd/system/Battery-Health-Charging.service" ]]; then
+		sudo systemctl stop Battery-Health-Charging.service
+		sudo systemctl disable enable Battery-Health-Charging.service
+		sudo rm -rf /etc/systemd/system/Battery-Health-Charging.service
+	fi
+	if [[ -d "$SYSTEMD_DIR" ]]; then
+		echo $MODE | sudo tee /sys/class/power_supply/BAT?/charge_control_end_threshold >> /dev/null
+		echo "[Unit]
+		Description=ASUS Battery Health Charging
+		After=multi-user.target
+		StartLimitBurst=0
+
+		[Service]
+		Type=oneshot
+		Restart=on-failure
+		ExecStart=/bin/bash -c 'echo $MODE | sudo tee /sys/class/power_supply/BAT?/charge_control_end_threshold'
+
+		[Install]
+		WantedBy=multi-user.target" >> Battery-Health-Charging
+		sed 's/		//' Battery-Health-Charging >> Battery-Health-Charging.service
+		sudo rm -rf Battery-Health-Charging
+		sudo mv Battery-Health-Charging.service /etc/systemd/system/Battery-Health-Charging.service
+		sudo systemctl enable Battery-Health-Charging.service
+	else
+		echo $MODE | sudo tee /sys/class/power_supply/BAT?/charge_control_end_threshold >> /dev/null
+	fi
 }
 function SET_MODE() {
 	if [ "$input" -eq 1 ]; then
-		echo -e "Setting$RED$FULL$NONE"
+		echo -e "\nSetting$RED$FULL$NONE"
 		MODE=100
 		SET_THRESHOLD
 		REFREASH
 	elif [ "$input" -eq 2 ]; then
-		echo -e "Setting$BLUE$BALANCED$NONE"
+		echo -e "\nSetting$BLUE$BALANCED$NONE"
 		MODE=80
 		SET_THRESHOLD
 		REFREASH
 	elif [ "$input" -eq 3 ]; then
-		echo -e "Setting$GREEN$MAXIMUM_LIFESPAN$NONE"
+		echo -e "\nSetting$GREEN$MAXIMUM_LIFESPAN$NONE"
 		MODE=60
 		SET_THRESHOLD
 		REFREASH
